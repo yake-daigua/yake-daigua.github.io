@@ -1,0 +1,21 @@
+#red,blue,purple,orange,green,pink
+
+
+---
+title: 日志
+date: 2022-09-14 19:33:57
+type: timeline
+---
+
+{% timeline 2022,blue %}
+<!-- timeline 01-02 -->
+這是測試頁面
+<!-- endtimeline -->
+{% endtimeline %}
+
+
+{% timeline 2022,red %}
+<!-- timeline 11-02 -->
+這是測試頁面aaaaaaaaaa
+<!-- endtimeline -->
+{% endtimeline %}
